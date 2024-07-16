@@ -30,10 +30,10 @@ async function getPK(wallet) {
   return result.rows[0];
 }
 
-async function createTransaction(type, value, wallet, hash) {
+async function createTransaction(type, value, fromwallet, hash, towallet, tokenURI) {
   const now = moment().format();
-  const query = 'INSERT INTO transactions (type, value, wallet, date, hash) VALUES ($1, $2, $3, $4, $5)';
-  const values = [type, value, wallet, now, hash];
+  const query = 'INSERT INTO transactions (type, value, fromwallet, hash, date, towallet, tokenURI ) VALUES ($1, $2, $3, $4, $5, $6, $7)';
+  const values = [type, value, fromwallet, hash, now, towallet, tokenURI];
   const result = await pool.query(query, values);
   return result.rows[0];
 }
@@ -109,7 +109,7 @@ module.exports = {
         hash: receipt.transactionHash,
         block: receipt.blockNumber.toString()
       });
-      createTransaction("Mint", amountInWei, toWallet, receipt.transactionHash)
+      createTransaction("Mint", amountInWei, toWallet, receipt.transactionHash, signer.address, "-")
     } catch (error) {
       res.status(400).json({ error })
     }
@@ -117,7 +117,8 @@ module.exports = {
   async burn(req, res) {
     try {
       const { contractAddress, fromWallet, localhostUrl, toWallet, amount, coin } = req.body;
-      // Subsituir pela chave obtida no HSM
+      
+      //Busca chave privada pelo endereço da Wallet
       let result = await getPK(fromWallet);
       let address = result.pk.toString();
       const amountInWei = Web3.utils.toWei(amount, 'ether');
@@ -150,7 +151,7 @@ module.exports = {
         hash: receipt.transactionHash,
         block: receipt.blockNumber.toString()
       });
-      createTransaction("Burn", amountInWei, toWallet, receipt.transactionHash)
+      createTransaction("Burn", amountInWei, toWallet, receipt.transactionHash, account.address, "-")
     } catch (error) {
       res.status(400).json({ error })
     }
@@ -199,7 +200,7 @@ module.exports = {
         hash: receipt.transactionHash,
         block: receipt.blockNumber.toString()
       });
-      createTransaction("Transfer", amountInWei, toWallet, receipt.transactionHash)
+      createTransaction("Transfer", amountInWei, toWallet, receipt.transactionHash, account.address, "-")
     } catch (error) {
       res.status(400).json({ error })
     }

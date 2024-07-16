@@ -8,15 +8,10 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract {{Name}} is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
-    uint256 public tokenCounter;
-
     constructor(address initialOwner)
         ERC721("{{Name}}", "{{Symbol}}")
-        Ownable(initialOwner)     
-    {
-        tokenCounter = 0;
-
-    }
+        Ownable(initialOwner)
+    {}
 
     function _baseURI() internal pure override returns (string memory) {
         return "{{baseURI}}";
@@ -39,14 +34,6 @@ contract {{Name}} is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         returns (string memory)
     {
         return super.tokenURI(tokenId);
-    }
-
-    function createNFT(address recipient, string memory tokenURI) public onlyOwner returns (uint256) {
-        uint256 newTokenId = tokenCounter;
-        _safeMint(recipient, newTokenId);
-        _setTokenURI(newTokenId, tokenURI);
-        tokenCounter += 1;
-        return newTokenId;
     }
 
     function supportsInterface(bytes4 interfaceId)

@@ -11,7 +11,7 @@ contract {{Name}} is ERC20, ERC20Burnable, Ownable {
         ERC20("{{Name}}", "{{Symbol}}")
         Ownable(initialOwner)
     {
-        _mint(msg.sender, 10000 * 10 ** decimals());
+        _mint(msg.sender, 0 * 10 ** decimals());
     }
 
     function mint(address to, uint256 amount) public onlyOwner {

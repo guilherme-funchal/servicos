@@ -1,4 +1,6 @@
 const express = require('express');
+const Token = require('../models/token');
+const Transaction = require('../models/transact');
 const fs = require("fs");
 const path = require('path');
 const bodyParser = require('body-parser');
@@ -12,7 +14,6 @@ const moment = require('moment');
 // Configure a conexão com o banco de dados PostgreSQL
 dotenv.config();
 
-
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -21,21 +22,15 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-
-async function getPK(wallet) {
+async function getPK(token) {
   const now = moment().format();
-  const query = 'SELECT pk FROM wallets WHERE wallet = $1';
-  const values = [wallet];
-  const result = await pool.query(query, values);
-  return result.rows[0];
+  const result = await Token.findOne({ where: { token } })
+  return result.pk 
 }
 
-async function createTransaction(type, value, fromwallet, hash, towallet, tokenURI) {
-  const now = moment().format();
-  const query = 'INSERT INTO transactions (type, value, fromwallet, hash, date, towallet, tokenURI ) VALUES ($1, $2, $3, $4, $5, $6, $7)';
-  const values = [type, value, fromwallet, hash, now, towallet, tokenURI];
-  const result = await pool.query(query, values);
-  return result.rows[0];
+
+async function createTransaction(type, value, fromwallet, hash, towallet, tokenuri, tokenid) {
+  const result = await Transaction.create({ type, value, fromwallet, hash, towallet, tokenuri, tokenid })
 }
 
 module.exports = {
@@ -77,8 +72,7 @@ module.exports = {
     try {
       const { contractAddress, fromWallet, localhostUrl, toWallet, amount, coin } = req.body;
       // Subsituir pela chave obtida no HSM
-      let result = await getPK(fromWallet);
-      let address = result.pk.toString();
+      let address = await getPK(fromWallet);
       const amountInWei = Web3.utils.toWei(amount, 'ether');
       const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
       const { abi } = require(templatePath);
@@ -92,6 +86,7 @@ module.exports = {
       const signer = web3.eth.accounts.privateKeyToAccount(
         `${address}`
       );
+      
       web3.eth.accounts.wallet.add(signer);
       var contratoInteligente = new web3.eth.Contract(abi, `${contractAddress}`);
       const tx = contratoInteligente.methods.mint(toWallet, amountInWei);
@@ -109,18 +104,17 @@ module.exports = {
         hash: receipt.transactionHash,
         block: receipt.blockNumber.toString()
       });
-      createTransaction("Mint", amountInWei, toWallet, receipt.transactionHash, signer.address, "-")
+      createTransaction("Mint", amountInWei, toWallet, receipt.transactionHash, signer.address, "-", "-")
     } catch (error) {
       res.status(400).json({ error })
     }
   },
   async burn(req, res) {
     try {
-      const { contractAddress, fromWallet, localhostUrl, toWallet, amount, coin } = req.body;
-      
-      //Busca chave privada pelo endereço da Wallet
-      let result = await getPK(fromWallet);
-      let address = result.pk.toString();
+      const { contractAddress, localhostUrl, toWallet, amount, coin } = req.body;
+      // Subsituir pela chave obtida no HSM
+      let address =await getPK(toWallet);
+
       const amountInWei = Web3.utils.toWei(amount, 'ether');
       const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
       const { abi } = require(templatePath);
@@ -134,35 +128,56 @@ module.exports = {
       const signer = web3.eth.accounts.privateKeyToAccount(
         `${address}`
       );
+
       web3.eth.accounts.wallet.add(signer);
       var contratoInteligente = new web3.eth.Contract(abi, `${contractAddress}`);
-      const tx = contratoInteligente.methods.burn(amountInWei);
+      const owner = await contratoInteligente.methods.owner().call();
 
-      const receipt = await tx
-        .send({
-          from: signer.address,
-          gas: await tx.estimateGas(),
-        })
-        .once("transactionHash", (txhash) => {
-        });
-      //res.status(200).send(`Moeda incluída e minerada no bloco ${receipt.blockNumber}`);
-
-      res.status(200).json({
-        hash: receipt.transactionHash,
-        block: receipt.blockNumber.toString()
+      let balance = await contratoInteligente.methods.balanceOf(toWallet).call(function (err, res) {
+        if (err) {
+          console.log("Ocorreu um erro", err)
+          return
+        }
+        console.log("Saldo gerado com Sucesso")
       });
-      createTransaction("Burn", amountInWei, toWallet, receipt.transactionHash, account.address, "-")
+
+      const saldo = Web3.utils.fromWei(balance, 'ether');
+
+      if (Number(saldo) >= Number(amount)) {
+        const tx = contratoInteligente.methods.burnFrom(toWallet, amountInWei);
+
+        const receipt = await tx
+          .send({
+            from: owner,
+            to: contractAddress,
+            gas: await tx.estimateGas(),
+          })
+          .once("transactionHash", (txhash) => {
+          });
+
+        //res.status(200).send(`Moeda incluída e minerada no bloco ${receipt.blockNumber}`);
+
+
+        res.status(200).json({
+          hash: receipt.transactionHash,
+          block: receipt.blockNumber.toString()
+        });
+        createTransaction("Burn", amountInWei, toWallet, receipt.transactionHash, signer.address, "-", "-")
+      } else {
+        res.status(400).json({
+          Saldo: saldo,
+          Solicitado: amount
+        });
+      }
     } catch (error) {
       res.status(400).json({ error })
     }
   },
   async transfer(req, res) {
     try {
-      const { contractAddress, toWallet, value, localhostUrl, coin, fromWallet } = req.body;
-      const amountInWei = Web3.utils.toWei(value, 'ether');
-      var result = await getPK(fromWallet);
-      let pk = result.pk.toString();
-
+      const { contractAddress, toWallet, amount, localhostUrl, coin, fromWallet } = req.body;
+      const amountInWei = Web3.utils.toWei(amount, 'ether');
+      let pk = await getPK(fromWallet);
       const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
       const { abi } = require(templatePath);
       const network = localhostUrl;
@@ -173,41 +188,62 @@ module.exports = {
       );
 
       const contract = new web3.eth.Contract(abi, contractAddress);
-      const account = web3.eth.accounts.privateKeyToAccount(pk);
-      web3.eth.accounts.wallet.add(account);
-      web3.eth.defaultAccount = account.address;
-      const tx = contract.methods.transfer(toWallet, amountInWei);
-      const gas = await tx.estimateGas({ from: account.address });
-      const gasPrice = await web3.eth.getGasPrice();
-      const data = tx.encodeABI();
-      const nonce = await web3.eth.getTransactionCount(account.address);
 
-      const signedTx = await web3.eth.accounts.signTransaction(
-        {
-          to: contractAddress,
-          data,
-          gas,
-          gasPrice,
-          nonce,
-          chainId: await web3.eth.getChainId(),
-        },
-        pk
-      );
-
-      const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
-      console.log('Hash da transação:', receipt.transactionHash);
-      res.status(200).json({
-        hash: receipt.transactionHash,
-        block: receipt.blockNumber.toString()
+      let balance = await contract.methods.balanceOf(fromWallet).call(function (err, res) {
+        if (err) {
+          console.log("Ocorreu um erro", err)
+          return
+        }
+        console.log("Saldo gerado com Sucesso")
       });
-      createTransaction("Transfer", amountInWei, toWallet, receipt.transactionHash, account.address, "-")
+
+
+      const saldo = Web3.utils.fromWei(balance, 'ether');
+
+
+      if (Number(saldo) >= Number(amount)) {
+
+        const account = web3.eth.accounts.privateKeyToAccount(pk);
+        web3.eth.accounts.wallet.add(account);
+        web3.eth.defaultAccount = account.address;
+        const tx = contract.methods.transfer(toWallet, amountInWei);
+        const gas = await tx.estimateGas({ from: account.address });
+        const gasPrice = await web3.eth.getGasPrice();
+        const data = tx.encodeABI();
+        const nonce = await web3.eth.getTransactionCount(account.address);
+
+        const signedTx = await web3.eth.accounts.signTransaction(
+          {
+            to: contractAddress,
+            data,
+            gas,
+            gasPrice,
+            nonce,
+            chainId: await web3.eth.getChainId(),
+          },
+          pk
+        );
+
+        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+        console.log('Hash da transação:', receipt.transactionHash);
+        res.status(200).json({
+          hash: receipt.transactionHash,
+          block: receipt.blockNumber.toString()
+        });
+        createTransaction("Transfer", amountInWei, toWallet, receipt.transactionHash, account.address, "-", "-")
+      } else {
+        res.status(400).json({
+          Saldo: saldo,
+          Solicitado: String(amount)
+        });
+      }
     } catch (error) {
       res.status(400).json({ error })
     }
   },
   async balanceOf(req, res) {
     try {
-      const { contractAddress, coin, localhostUrl, address } = req.body;
+      const { contractAddress, coin, localhostUrl, wallet } = req.body;
       const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
       const { abi } = require(templatePath);
       const network = localhostUrl;
@@ -215,7 +251,7 @@ module.exports = {
 
       var contratoInteligente = new web3.eth.Contract(abi, `${contractAddress}`);
 
-      let balance = await contratoInteligente.methods.balanceOf(address).call(function (err, res) {
+      let balance = await contratoInteligente.methods.balanceOf(wallet).call(function (err, res) {
         if (err) {
           console.log("Ocorreu um erro", err)
           return
@@ -249,13 +285,13 @@ module.exports = {
   async info(req, res) {
     try {
       const { contractAddress, localhostUrl, coin } = req.body;
+
       const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
       const { abi } = require(templatePath);
       const network = localhostUrl;
       var web3 = new Web3(`${network}`);
       const contract = new web3.eth.Contract(abi, contractAddress);
       const symbol = await contract.methods.symbol().call();
-      console.log("Symbol:", symbol)
       res.status(200).send({ Symbol: symbol });
     } catch (error) {
       console.error("Erro ao obter o símbolo do token:", error);

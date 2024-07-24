@@ -1,4 +1,8 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@nomicfoundation/hardhat-toolbox");
+require('@typechain/hardhat');
+require( '@nomicfoundation/hardhat-ethers');
+require('@nomicfoundation/hardhat-chai-matchers');
 
 // /** @type import('hardhat/config').HardhatUserConfig */
 // module.exports = {
@@ -15,7 +19,7 @@ module.exports = {
   },
   networks: {
     localhost: {
-      url: "http://127.0.0.1:8545",
+      url: "http://127.0.0.1:8545/",
     },
   },
 };

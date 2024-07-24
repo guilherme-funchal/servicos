@@ -4,6 +4,7 @@ const app = express()
 var cors = require('cors');
 app.use(cors())
 
+require('./database')
 
 app.use(express.json())
 app.use(routes)

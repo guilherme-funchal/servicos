@@ -30,27 +30,30 @@ async function createHistory(contract, wallet) {
     return result.rows[0];
 }
 
-
-
+async function getPK(token) {
+  const now = moment().format();
+  const query = 'SELECT pk FROM tokens WHERE token = $1';
+  const values = [token];
+  const result = await pool.query(query, values);
+  return result.rows[0];
+}
 
 module.exports = {
   async deploy(req, res) {
-    const { privateKey, name, wallet, host } = req.body;
+    const { name, wallet, host } = req.body;
+    let result = await getPK(wallet);
+    let privateKey = result.pk.toString();
     try {
       const newFilePath = path.join(__dirname, '../contracts', name + '.sol');
       const deployScript = path.join(__dirname, '../scripts', 'deploy.js');
-      console.log("deployScript", deployScript)
       const command = `PRIVATE_KEY=${privateKey} NAME=${name} npx hardhat run ${deployScript} --network ${host}`;
-
-      // Configure a conexão com o banco de dados PostgreSQL
 
       exec(command, (error, stdout, stderr) => {
         if (error) {
           console.error(`exec error: ${error}`);
           return res.status(500).json({ error: 'Deployment failed' });
         }
-        //console.log(`${stdout}`);
-        //console.error(`stderr: ${stderr}`);
+
         const match = stdout.match(/Contract nunber: (0x[a-fA-F0-9]{40})/);
         if (match) {
           const contractAddress = match[1];

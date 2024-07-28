@@ -71,6 +71,38 @@ module.exports = {
       res.status(400).json({ error })
     }
   },
+  async deployFile(req, res) {
+    const { filename, wallet, host } = req.body;
+    let result = await getPK(wallet);
+    let privateKey = result.pk.toString();
+    try {
+      const newFilePath = path.join(__dirname, '../contracts', filename + '.sol');
+      const deployScript = path.join(__dirname, '../scripts', 'deployfilename.js');
+      const command = `PRIVATE_KEY=${privateKey} FILENAME=${filename} npx hardhat run ${deployScript} --network ${host}`;
+
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`exec error: ${error}`);
+          return res.status(500).json({ error: 'Deployment failed' });
+        }
+
+        const match = stdout.match(/Contract nunber: (0x[a-fA-F0-9]{40})/);
+        if (match) {
+          const contractAddress = match[1];
+          res.json({ contractAddress });
+          let test = fs.unlinkSync(newFilePath);
+          const command = `PRIVATE_KEY=${privateKey} FILENAME=${filename} npx hardhat run ${deployScript} --network localhost`;
+
+          createHistory(contractAddress, wallet);
+
+        } else {
+          res.status(500).json({ error: 'Failed to get contract address' });
+        }
+      });
+    } catch (error) {
+      res.status(400).json({ error })
+    }
+  },
   async createFile(req, res) {
     const { name, symbol, template, baseURI } = req.body;
     let contractContent = "";

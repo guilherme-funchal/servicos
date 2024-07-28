@@ -18,3 +18,4 @@ dist/
 build/
 out/
 artifacts/
+node_modules/

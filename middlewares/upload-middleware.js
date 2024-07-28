@@ -1,4 +1,5 @@
 const multer = require('multer');
+const path = require('path');
 
 module.exports = (multer({
     storage: multer.diskStorage({
@@ -6,16 +7,16 @@ module.exports = (multer({
             cb(null, './contracts')
         },
         filename: (req, file, cb) => {
-            cb(null, Date.now().toString() + "_" + file.originalname)
+            cb(null, file.originalname)
         }
     }),
-    fileFilter: (req, file, cb) => {
-        const extensaoImg = ['image/png', 'image/jpg', 'image/jpeg', 'application/pdf'].find(formatoAceito => formatoAceito == file.mimetype);
-
-        if(extensaoImg){
-            return cb(null, true);
+    fileFilter : (req, file, cb) => {
+        // Verifica a extensão do arquivo
+        const ext = path.extname(file.originalname);
+        if (ext === '.sol') {
+          cb(null, true); // Aceita o arquivo
+        } else {
+          cb(new Error('Apenas arquivos .sol são permitidos'), false); // Rejeita o arquivo
         }
-
-        return cb(null, false);
     }
 }));

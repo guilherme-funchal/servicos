@@ -1,17 +1,16 @@
 const { Model, DataTypes, Op } = require("sequelize");
 
-class Token extends Model {
+class User extends Model {
   static init(sequelize) {
     super.init({
-      token: DataTypes.STRING,
-      pk: DataTypes.STRING,
       email: DataTypes.STRING,
-      profile: DataTypes.STRING,
+      wallet: DataTypes.STRING,
+      pk: DataTypes.STRING
     }, {
-      tableName: 'tokens',
+      tableName: 'users',
       sequelize
     })
   }
 }
 
-module.exports = Token
+module.exports = User

@@ -1,17 +1,17 @@
-const Token = require('../models/token');
+const User = require('../models/user');
 //import { PostgresDialect } from '@sequelize/postgres';
 const { Sequelize, DataTypes, Op } = require("sequelize");
 
 module.exports = {
   async create(req, res) {
     try {
-      const { token, pk, email, profile } = req.body
-      const data = await Token.findOne({ where: { pk } })
+      const { email, wallet, pk} = req.body
+      const data = await User.findOne({ where: { email } })
       
       if (data) {
         res.status(201).json({ message: "Já existe este dado" })
       } else {
-        const data = await Token.create({ token, pk, email, profile })
+        const data = await User.create({ email, wallet, pk})
         res.status(200).json({ data })
       }
     } catch (error) {
@@ -20,13 +20,13 @@ module.exports = {
   },
   async update(req, res) {
     try {
-      const { id } = req.params
-      const { token, pk, email, profile } = req.body
-      const dado = await Token.findOne({ where: { id } })
+      const { email } = req.params
+      const { wallet, pk } = req.body
+      const dado = await User.findOne({ where: { email } })
       if (!dado) {
         res.status(401).json({ message: "Nenhum dado encontrado" })
       } else {
-        const dado = await Token.update({ token, pk, email, profile  }, { where: { id } })
+        const dado = await User.update({ wallet, pk }, { where: { email } })
         res.status(200).json({ dado })
       }
     } catch (error) {
@@ -35,30 +35,29 @@ module.exports = {
   },
   async list(req, res) {
     try {
-      const dado = await Token.findAll();
+      const dado = await User.findAll();
       if (!dado) {
         res.status(401).json({ message: 'Não existe dado cadastrada' })
       }
-      //res.status(200).json({ cidades })
       res.status(200).json(dado);
     } catch (error) {
       res.status(400).json({ error })
     }
   },
   async delete(req, res) {
-    const { id } = req.params
-    const dado = await Token.findOne({ where: { id } })
+    const { email } = req.params
+    const dado = await User.findOne({ where: { email } })
     if (!dado) {
       res.status(401).json({ message: 'Dado não encontrado' })
     } else {
-      await dado.destroy({ where: { id } })
+      await dado.destroy({ where: { email } })
       res.status(200).json({ ok: true })
     }
   },
   async find(req, res) {
     try {
-      const { id } = req.params
-      const dado = await Token.findAll({ where: { id } })
+      const { email } = req.params
+      const dado = await User.findAll({ where: { email } })
 
       if (!dado) {
         res.status(401).json({ message: 'Não existe dado cadastrado' })

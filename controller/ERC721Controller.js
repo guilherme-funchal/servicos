@@ -138,32 +138,36 @@ module.exports = {
     }
   },
   async burn(req, res) {
-    const { recipient, fromWallet, coin, localhostUrl, contractAddress, tokenId } = req.body;
+    const { fromWallet, contract, tokenId } = req.body;
+    const data1 = await Contract.findOne({ where: { contract } })
+    console.log("data->", data1.name);
+    let result = await getPK(data1.wallet)
+
     try {
-      const web3 = new Web3(new Web3.providers.HttpProvider(localhostUrl));
-      const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+      const web3 = new Web3(new Web3.providers.HttpProvider(data1.address));
+      const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${data1.name}` + '.sol', `${data1.name}` + '.json');
       const source = fs.readFileSync(contractPath, 'utf8');
       const { abi, bytecode } = JSON.parse(source);
 
       //Busca chave privada pelo endereço da Wallet
-      let result = await getPK(fromWallet);
-      console.log("->", result.pk);
+      let result = await getPK(data1.wallet)
+
       const account = web3.eth.accounts.privateKeyToAccount(result.pk);
       web3.eth.accounts.wallet.add(account);
       web3.eth.defaultAccount = account.address;
-      const contract = new web3.eth.Contract(abi, contractAddress);
-      const tokenURI = await contract.methods.tokenURI(tokenId).call();
+      const smartcontract = new web3.eth.Contract(abi, contract);
+      const tokenURI = await smartcontract.methods.tokenURI(tokenId).call();
       const filecid = tokenURI.replace("ipfs://", "");
 
-      const data = contract.methods.burn(tokenId).encodeABI();
+      const data = smartcontract.methods.burn(tokenId).encodeABI();
       
-      const gasEstimate = await contract.methods.burn(tokenId).estimateGas({ from: account.address });
+      const gasEstimate = await smartcontract.methods.burn(tokenId).estimateGas({ from: account.address });
       // Obtém o preço atual do gás
       const gasPrice = await web3.eth.getGasPrice();
 
       const tx = {
         from: account.address,
-        to: contractAddress,
+        to: contract,
         gas: gasEstimate,
         gasPrice: gasPrice,
         data: data

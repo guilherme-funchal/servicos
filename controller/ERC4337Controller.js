@@ -1,6 +1,7 @@
 const express = require('express');
 const Token = require('../models/token');
 const Transaction = require('../models/transact');
+const Contract = require('../models/contract');
 const User = require('../models/user');
 const fs = require("fs");
 const path = require('path');
@@ -61,7 +62,7 @@ const getContractInstance = (contractName, contractAddress, network) => {
 
 module.exports = {
   async create(req, res) {
-    const { email, network } = req.body;
+    const { email, address } = req.body;
     if (!email) {
       return res.status(400).send('Email é obrigatório');
     }
@@ -73,15 +74,13 @@ module.exports = {
       // Gera uma nova conta
       const web3 = new Web3(
         new Web3.providers.HttpProvider(
-          `${network}`
+          `${address}`
         )
       );
 
       const account = web3.eth.accounts.create();
       const wallet = account.address;
-      console.log("wallet_addres", wallet);
       const pk = account.privateKey;
-      console.log("private_key", pk);
 
       // Armazena no banco de dados
       const result = await User.create({ email, wallet, pk })
@@ -92,15 +91,17 @@ module.exports = {
     }
   },
   async balanceERC20(req, res) {
-    const { wallet, contract, network, coin } = req.body;
+    const { wallet, contract} = req.body;
+    const data = await Contract.findOne({ where: { contract } })
+
     const result = await User.findOne({ where: { wallet } })
 
-    const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+    const templatePath = path.join(__dirname, '../artifacts/contracts', `${data.name}` + '.sol', `${data.name}` + '.json');
 
     const { abi } = require(templatePath);
     const web3 = new Web3(
       new Web3.providers.HttpProvider(
-        `${network}`
+        `${data.address}`
       )
     );
     const erc20Contract = new web3.eth.Contract(abi, `${contract}`);
@@ -124,16 +125,17 @@ module.exports = {
 
   },
   async mintERC20(req, res) {
-    const { wallet, contract, network, coin, amount } = req.body;
+    const { wallet, contract, amount } = req.body;
+    const data = await Contract.findOne({ where: { contract } })
 
     try {
       // Carregar o ABI do contrato
-      const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}.sol`, `${coin}.json`);
+      const templatePath = path.join(__dirname, '../artifacts/contracts', `${data.name}.sol`, `${data.name}.json`);
       const contractJson = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
       const { abi } = contractJson;
 
       // Inicializar o Web3
-      const web3 = new Web3(new Web3.providers.HttpProvider(network));
+      const web3 = new Web3(new Web3.providers.HttpProvider(data.address));
       const erc20Contract = new web3.eth.Contract(abi, contract);
 
       // Usar a conta do proprietário para realizar a transação de mint
@@ -155,6 +157,73 @@ module.exports = {
     } catch (error) {
       console.error('Erro ao mintar tokens:', error);
       res.status(500).send('Erro ao mintar tokens');
+    }
+  },
+  async burnERC20(req, res) {
+    const { wallet, contract, amount } = req.body;
+    const data = await Contract.findOne({ where: { contract } })
+
+    try {
+      const result = await User.findOne({ where: { wallet } });
+      if (!result) {
+        return res.status(404).send('Usuário não encontrado');
+      }
+
+      const templatePath = path.join(__dirname, '../artifacts/contracts', `${data.name}.sol`, `${data.name}.json`);
+      const contractJson = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+      const { abi } = contractJson;
+
+      const web3 = new Web3(new Web3.providers.HttpProvider(data.address));
+      const erc20Contract = new web3.eth.Contract(abi, contract);
+
+      const account = web3.eth.accounts.privateKeyToAccount(result.pk);
+      web3.eth.accounts.wallet.add(account);
+      web3.eth.defaultAccount = account.address;
+
+      const tx = await erc20Contract.methods.burn(Web3.utils.toWei(amount, 'ether')).send({ from: wallet });
+
+      await createTransaction('burn', amount, wallet, tx.transactionHash, null, null, null);
+
+      res.status(200).json({
+        message: 'Tokens queimados com sucesso',
+        transactionHash: tx.transactionHash
+      });
+    } catch (error) {
+      console.error('Erro ao queimar tokens:', error);
+      res.status(500).send('Erro ao queimar tokens');
+    }
+  },
+  async transferERC20(req, res) {
+    const { fromWallet, toWallet, contract, network, coin, amount } = req.body;
+
+    try {
+      const result = await User.findOne({ where: { wallet: fromWallet } });
+      if (!result) {
+        return res.status(404).send('Usuário não encontrado');
+      }
+
+      const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}.sol`, `${coin}.json`);
+      const contractJson = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+      const { abi } = contractJson;
+
+      const web3 = new Web3(new Web3.providers.HttpProvider(network));
+      const erc20Contract = new web3.eth.Contract(abi, contract);
+
+      const account = web3.eth.accounts.privateKeyToAccount(result.pk);
+      web3.eth.accounts.wallet.add(account);
+      web3.eth.defaultAccount = account.address;
+
+      const tx = await erc20Contract.methods.transfer(toWallet, Web3.utils.toWei(amount, 'ether')).send({ from: fromWallet });
+
+      await createTransaction('transfer', amount, fromWallet, tx.transactionHash, toWallet, null, null);
+
+      res.status(200).json({
+        message: 'Tokens transferidos com sucesso',
+        transactionHash: tx.transactionHash
+      });
+    } catch (error) {
+      console.error('Erro ao transferir tokens:', error);
+      res.status(500).send('Erro ao transferir tokens');
     }
   }
 }

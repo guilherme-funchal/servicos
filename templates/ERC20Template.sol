@@ -16,7 +16,7 @@ contract {{Name}} is ERC20, ERC20Burnable, Ownable {
     function burnFrom(address account, uint256 amount) public override onlyOwner {
         _burn(account, amount);
     }
-    
+
     function mint(address to, uint256 amount) public onlyOwner {
         _mint(to, amount);
     }

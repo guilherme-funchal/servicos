@@ -1,5 +1,7 @@
 const express = require('express');
 const { exec } = require('child_process');
+const Contract = require('../models/contract');
+const Token = require('../models/token');
 const path = require('path');
 const fs = require("fs");
 const bodyParser = require('body-parser');
@@ -22,27 +24,19 @@ const pool = new Pool({
 
 require('dotenv').config();
 
-async function createHistory(contract, wallet) {
-  const now = moment().format();
-  const query = 'INSERT INTO contracts (contract, wallet, date) VALUES ($1, $2, $3)';
-  const values = [contract, wallet, now];
-  const result = await pool.query(query, values);
-    return result.rows[0];
+async function createHistory(contract, wallet, name, host, address) {
+  const result = await Contract.create({ contract, wallet, name, host, address })
 }
 
 async function getPK(token) {
-  const now = moment().format();
-  const query = 'SELECT pk FROM tokens WHERE token = $1';
-  const values = [token];
-  const result = await pool.query(query, values);
-  return result.rows[0];
+  const result = await Token.findOne({ where: { token } })
+  return result.pk 
 }
 
 module.exports = {
   async deploy(req, res) {
-    const { name, wallet, host } = req.body;
-    let result = await getPK(wallet);
-    let privateKey = result.pk.toString();
+    const { name, wallet, host, address } = req.body;
+    let privateKey = await getPK(wallet);
     try {
       const newFilePath = path.join(__dirname, '../contracts', name + '.sol');
       const deployScript = path.join(__dirname, '../scripts', 'deploy.js');
@@ -61,7 +55,7 @@ module.exports = {
           let test = fs.unlinkSync(newFilePath);
           const command = `PRIVATE_KEY=${privateKey} NAME=${name} npx hardhat run ${deployScript} --network localhost`;
 
-          createHistory(contractAddress, wallet);
+          createHistory(contractAddress, wallet, name, host, address);
 
         } else {
           res.status(500).json({ error: 'Failed to get contract address' });
@@ -72,9 +66,8 @@ module.exports = {
     }
   },
   async deployFile(req, res) {
-    const { filename, wallet, host } = req.body;
-    let result = await getPK(wallet);
-    let privateKey = result.pk.toString();
+    const { filename, wallet, host, address } = req.body;
+    let privateKey = await getPK(wallet);
     try {
       const newFilePath = path.join(__dirname, '../contracts', filename + '.sol');
       const deployScript = path.join(__dirname, '../scripts', 'deployfilename.js');
@@ -93,7 +86,7 @@ module.exports = {
           let test = fs.unlinkSync(newFilePath);
           const command = `PRIVATE_KEY=${privateKey} FILENAME=${filename} npx hardhat run ${deployScript} --network localhost`;
 
-          createHistory(contractAddress, wallet);
+          createHistory(contractAddress, wallet, filename, host, address);
 
         } else {
           res.status(500).json({ error: 'Failed to get contract address' });

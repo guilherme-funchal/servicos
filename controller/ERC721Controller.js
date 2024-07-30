@@ -13,47 +13,19 @@ const { create } = require('ipfs-http-client');
 const axios = require('axios');
 const Token = require('../models/token');
 const Transaction = require('../models/transact');
+const Contract = require('../models/contract');
 
 // Configure a conexão com o banco de dados PostgreSQL
 dotenv.config();
 
-
-// const pool = new Pool({
-//   user: process.env.DB_USER,
-//   host: process.env.DB_HOST,
-//   database: process.env.DB_DATABASE,
-//   password: process.env.DB_PASSWORD,
-//   port: process.env.DB_PORT,
-// });
-
 const auth = 'Bearer ' + process.env.IPFS_AUTH_TOKEN;
 const ipfsUrl = process.env.IPFS_UPLOAD_METADATA;
-
-
-// async function getPK(token) {
-//   const now = moment().format();
-
-//   const query = 'SELECT pk FROM tokens WHERE token = $1';
-//   const values = [token];
-//   const result = await pool.query(query, values);
-//   return result.rows[0];
-// }
-
-// async function createTransaction(type, value, fromwallet, hash, towallet, tokenURI, tokenid) {
-//   const now = moment().format();
-//   const query = 'INSERT INTO transactions (type, value, fromwallet, hash, date, towallet, tokenURI, tokenid ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)';
-//   const values = [type, value, fromwallet, hash, now, towallet, tokenURI, tokenid];
-//   const result = await pool.query(query, values);
-//   return result.rows[0];
-// }
 
 async function getPK(token) {
   const now = moment().format();
   const result = await Token.findOne({ where: { token } })
-  console.log("result", result.dataValues)
   return result.dataValues
 }
-
 
 async function createTransaction(type, value, fromwallet, hash, towallet, tokenuri, tokenid) {
   const result = await Transaction.create({ type, value, fromwallet, hash, towallet, tokenuri, tokenid })
@@ -61,30 +33,31 @@ async function createTransaction(type, value, fromwallet, hash, towallet, tokenu
 
 module.exports = {
   async mint(req, res) {
-    const { recipient, fromWallet, coin, localhostUrl, contractAddress, imageHash } = req.body;
+    const { recipient, contract, imageHash } = req.body;
     try {
       //const tokenURI = await uploadMetadata(metadata);
-      const web3 = new Web3(new Web3.providers.HttpProvider(localhostUrl));
-      const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+      const address = await Contract.findOne({ where: { contract } })
+
+      const web3 = new Web3(new Web3.providers.HttpProvider(address.address));
+      const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${address.name}` + '.sol', `${address.name}` + '.json');
       const source = fs.readFileSync(contractPath, 'utf8');
       const { abi, bytecode } = JSON.parse(source);
 
       //Busca chave privada pelo endereço da Wallet
-      let result = await getPK(fromWallet);
+      let result = await getPK(address.wallet);
 
       const account = web3.eth.accounts.privateKeyToAccount(result.pk);
       web3.eth.accounts.wallet.add(account);
       web3.eth.defaultAccount = account.address;
-      const contract = new web3.eth.Contract(abi, contractAddress);
+      const smartcontract = new web3.eth.Contract(abi, contract);
 
       const metadata = {
-        "name": "NFT" + `${coin}`,
-        "description": "NFT Gerado para " + `${coin}`,
+        "name": "NFT" + `${address.name}`,
+        "description": "NFT Gerado para " + `${address.name}`,
         "image": "ipfs://" + `${imageHash}`,
         "attributes":  req.body.attributes
       }
 
-      //console.log("->", JSON.stringify(metadata));
 
       const response = await axios.post(ipfsUrl + 'upload-metadata', JSON.stringify(metadata), {
         headers: {
@@ -95,15 +68,15 @@ module.exports = {
 
       const tokenURI = response.data.tokenURI;
       // const tx = await contract.methods.safeMint(recipient, tokenURI).send({ from: account.address });
-      const data = contract.methods.safeMint(recipient, tokenURI).encodeABI();
-      const gasEstimate = await contract.methods.safeMint(recipient, tokenURI).estimateGas({ from: account.address });
+      const data = smartcontract.methods.safeMint(recipient, tokenURI).encodeABI();
+      const gasEstimate = await smartcontract.methods.safeMint(recipient, tokenURI).estimateGas({ from: account.address });
 
       // Obtém o preço atual do gás
       const gasPrice = await web3.eth.getGasPrice();
 
       const tx = {
         from: account.address,
-        to: contractAddress,
+        to: contract,
         gas: gasEstimate,
         gasPrice: gasPrice,
         data: data
@@ -114,7 +87,7 @@ module.exports = {
 
       // Enviar a transação
       const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
-      const transferEvents = await contract.getPastEvents('Transfer', {
+      const transferEvents = await smartcontract.getPastEvents('Transfer', {
         fromBlock: receipt.blockNumber,
         toBlock: receipt.blockNumber
       });
@@ -139,22 +112,25 @@ module.exports = {
     }
   },
   async view(req, res) {
-    const { recipient, fromWallet, coin, localhostUrl, contractAddress, tokenId } = req.body;
-    const web3 = new Web3(new Web3.providers.HttpProvider(localhostUrl));
-    const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+    const { fromWallet, contract, tokenId } = req.body;
+    const data = await Contract.findOne({ where: { contract } })
+    let result = await getPK(data.wallet);
+
+    const web3 = new Web3(new Web3.providers.HttpProvider(data.address));
+    const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${data.name}` + '.sol', `${data.name}` + '.json');
     const source = fs.readFileSync(contractPath, 'utf8');
     const { abi, bytecode } = JSON.parse(source);
     //Busca chave privada pelo endereço da Wallet
-    let result = await getPK(fromWallet);
+    
     const account = web3.eth.accounts.privateKeyToAccount(result.pk);
     web3.eth.accounts.wallet.add(account);
     web3.eth.defaultAccount = account.address;
-    const contract = new web3.eth.Contract(abi, contractAddress);
+    const smartcontract = new web3.eth.Contract(abi, contract);
 
     try {
 
-      const owner = await contract.methods.ownerOf(tokenId).call();
-      const tokenURI = await contract.methods.tokenURI(tokenId).call();
+      const owner = await smartcontract.methods.ownerOf(tokenId).call();
+      const tokenURI = await smartcontract.methods.tokenURI(tokenId).call();
 
       res.send({ success: true, owner, tokenURI });
     } catch (error) {
@@ -228,13 +204,15 @@ module.exports = {
   },
   async owner(req, res) {
     try {
-      const { contractAddress, localhostUrl, coin } = req.body;
-      const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+      const { contract, localhostUrl, coin } = req.body;
+      const result = await Contract.findOne({ where: { contract } })
+
+      const templatePath = path.join(__dirname, '../artifacts/contracts', `${result.name}` + '.sol', `${result.name}` + '.json');
       const { abi } = require(templatePath);
-      const network = localhostUrl;
+      const network = result.address;
       var web3 = new Web3(`${network}`);
-      const contract = new web3.eth.Contract(abi, contractAddress);
-      const owner = await contract.methods.owner().call();
+      const smartcontract = new web3.eth.Contract(abi, contract);
+      const owner = await smartcontract.methods.owner().call();
       console.log("Owner:", owner)
       res.status(200).send({ Owner: owner });
     } catch (error) {
@@ -244,13 +222,15 @@ module.exports = {
   },
   async info(req, res) {
     try {
-      const { contractAddress, localhostUrl, coin } = req.body;
-      const templatePath = path.join(__dirname, '../artifacts/contracts', `${coin}` + '.sol', `${coin}` + '.json');
+      const { contract } = req.body;
+      const result = await Contract.findOne({ where: { contract } })
+      
+      const templatePath = path.join(__dirname, '../artifacts/contracts', `${result.name}` + '.sol', `${result.name}` + '.json');
       const { abi } = require(templatePath);
-      const network = localhostUrl;
+      const network = result.address;
       var web3 = new Web3(`${network}`);
-      const contract = new web3.eth.Contract(abi, contractAddress);
-      const symbol = await contract.methods.symbol().call();
+      const smartcontract = new web3.eth.Contract(abi, contract);
+      const symbol = await smartcontract.methods.symbol().call();
       console.log("Symbol:", symbol)
       res.status(200).send({ Symbol: symbol });
     } catch (error) {

@@ -5,7 +5,9 @@ class Contract extends Model {
     super.init({
       contract: DataTypes.STRING,
       wallet: DataTypes.STRING,
-      date: DataTypes.DATE
+      name: DataTypes.STRING,
+      host: DataTypes.STRING,
+      address: DataTypes.STRING,
     }, {
       tableName: 'contracts',
       sequelize

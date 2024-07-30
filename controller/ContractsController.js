@@ -5,13 +5,13 @@ const { Sequelize, DataTypes, Op } = require("sequelize");
 module.exports = {
   async create(req, res) {
     try {
-      const { contract, wallet, date } = req.body
+      const { contract, wallet, name, host, address } = req.body
       const data = await Contract.findOne({ where: { contract } })
       
       if (data) {
         res.status(201).json({ message: "Já existe este dado" })
       } else {
-        const data = await Contract.create({ contract, wallet, date  })
+        const data = await Contract.create({ contract, wallet, name, host, address  })
         res.status(200).json({ data })
       }
     } catch (error) {
@@ -21,12 +21,12 @@ module.exports = {
   async update(req, res) {
     try {
       const { id } = req.params
-      const { contract, wallet, date} = req.body
+      const { contract, wallet, name, host, address } = req.body
       const dado = await Contract.findOne({ where: { id } })
       if (!dado) {
         res.status(401).json({ message: "Nenhum dado encontrado" })
       } else {
-        const dado = await Contract.update({ contract, wallet, date }, { where: { id } })
+        const dado = await Contract.update({ contract, wallet, name, host, address }, { where: { id } })
         res.status(200).json({ dado })
       }
     } catch (error) {
@@ -39,7 +39,6 @@ module.exports = {
       if (!dado) {
         res.status(401).json({ message: 'Não existe dado cadastrada' })
       }
-      //res.status(200).json({ cidades })
       res.status(200).json(dado);
     } catch (error) {
       res.status(400).json({ error })

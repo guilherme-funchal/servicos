@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-contract ERC4337Wallet is Ownable {
+contract ERC4337Wallet {
+    address public owner;
     address public entryPoint;
 
-    event AccountExecuted(address indexed dest, uint256 value, bytes data, bool success);
-
-    constructor(address _entryPoint) Ownable(msg.sender) {
+    constructor(address _entryPoint) {
+        owner = msg.sender;
         entryPoint = _entryPoint;
     }
 
-    function execute(address dest, uint256 value, bytes calldata data) external onlyOwner {
-        (bool success, ) = dest.call{value: value}(data);
-        emit AccountExecuted(dest, value, data, success);
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
     }
 
-    receive() external payable {}
+    function executeTransaction(address token, address to, uint256 amount) external onlyOwner {
+        IERC20(token).transfer(to, amount);
+    }
 
-    function updateEntryPoint(address _entryPoint) external onlyOwner {
-        entryPoint = _entryPoint;
+    function executeERC721Transaction(address token, address to, uint256 tokenId) external onlyOwner {
+        IERC721(token).transferFrom(address(this), to, tokenId);
     }
 }

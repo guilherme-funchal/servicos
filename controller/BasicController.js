@@ -29,8 +29,12 @@ async function createHistory(contract, wallet, name, host, address) {
 }
 
 async function getPK(token) {
-  const result = await Token.findOne({ where: { token } })
-  return result.pk 
+  try {
+    const result = await Token.findOne({ where: { token } })
+    return result.pk
+  } catch (error) {
+    console.log("Wallet e PK não existem no BD");
+  }
 }
 
 module.exports = {

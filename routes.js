@@ -1,6 +1,7 @@
 const { Router } = require('express');
 
 const upload = require('./middlewares/upload-middleware');
+const upload2 = require('./middlewares/upload-middlewareFile');
 
 const ERC20Controller = require('./controller/ERC20Controller');
 const ERC721Controller = require('./controller/ERC721Controller');
@@ -9,8 +10,9 @@ const TokensController = require('./controller/TokensController');
 const ContractsController = require('./controller/ContractsController');
 const TransactionsController = require('./controller/TransationsController');
 const UsersController = require('./controller/UsersController');
-const FileUploadController= require('./controller/UploadController');
+const UploadController = require('./controller/UploadController');
 const ERC4337Controller = require('./controller/ERC4337Controller.js');
+const IPFSController = require('./controller/IPFSController');
 
 const router = Router();
 
@@ -31,6 +33,7 @@ router.post('/erc4337/create', ERC4337Controller.create);
 router.post('/erc4337/balanceERC20', ERC4337Controller.balanceERC20);
 router.post('/erc4337/mintERC20', ERC4337Controller.mintERC20);
 router.post('/erc4337/burnERC20', ERC4337Controller.burnERC20);
+router.post('/erc4337/transferERC20', ERC4337Controller.transferERC20);
 
 router.post('/deploy', BasicController.deploy);
 router.post('/deployfile', BasicController.deployFile);
@@ -60,6 +63,15 @@ router.get('/users', UsersController.list);
 router.delete('/users/:email', UsersController.delete);
 router.get('/users/:email', UsersController.find);
 
-router.post('/upload', upload.single('file'), FileUploadController.upload);
+router.get('/files', IPFSController.files);
+router.get('/metadata/:hash', IPFSController.metadata);
+router.get('/fetch/:hash', IPFSController.fetch);
+router.delete('/delete/:hash', IPFSController.deleteFile);
+router.delete('/metadado/:filecid', IPFSController.deleteMetada);
+router.post('/file', upload2.single('file'), IPFSController.upload);
+router.post('/upload-metadata', IPFSController.uploadMetadata);
+
+router.post('/upload', upload.single('file'), UploadController.upload);
+router.post('/upload2', upload2.single('file'), UploadController.upload2);
 
 module.exports = router

@@ -11,7 +11,7 @@ module.exports = {
       if (data) {
         res.status(201).json({ message: "Já existe este dado" })
       } else {
-        const data = await User.create({ email, wallet, pk})
+        const data = await User.create({ email, wallet, pk })
         res.status(200).json({ data })
       }
     } catch (error) {

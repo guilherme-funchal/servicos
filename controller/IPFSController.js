@@ -18,8 +18,12 @@ const upload = require("../middlewares/upload-middlewareFile");
 
 dotenv.config();
 
+// Importar fetch dinamicamente
+const fetch = (async () => (await import('node-fetch')).default)();
+
 // Conectar ao IPFS existente
-const ipfs = create({ url: process.env.IPFS_API_URL || 'http://localhost:5001' });
+const ipfs = create({ url: process.env.IPFS_API_URL || 'http://localhost:5001', fetch });
+
 
 // Função para verificar se o arquivo está pinado
 const checkFilePinned = async (hash) => {
@@ -128,7 +132,7 @@ module.exports = {
             const file = req.file;
             const filePath = path.join(__dirname, "../", file.path);
             const fileBuffer = await fs.promises.readFile(filePath);
-            const uploadResult = await ipfs.add(fileBuffer);
+            const uploadResult = await ipfs.add(fileBuffer, {duplex: 1});
             const sizeInKilobytes = (uploadResult.size / 1024).toFixed(2);
 
             res.json({

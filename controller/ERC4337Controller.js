@@ -1,19 +1,46 @@
-const express = require('express');
-const Tokens = require('../models/token');
-const Transaction = require('../models/transact');
-const Contract = require('../models/contract');
-const User = require('../models/user');
-const fs = require("fs");
-const path = require('path');
-const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid');
-const { exec } = require('child_process');
+const { JsonRpcProvider, Contract, Wallet } = require('ethers');
 const crypto = require('crypto');
-const { Web3 } = require('web3');
-const dotenv = require('dotenv');
-const { Pool } = require('pg');
-const moment = require('moment');
 
+const fs = require('fs');
+const { Web3 } = require('web3');
+const { ethers } = require('ethers');
+const path = require('path');
+const {
+  eoaPublicKey,
+  eoaPrivateKey,
+  accountFactoryAddress,
+  entryPointAddress,
+  exampleContractAddress2,
+  paymasterAddress } = require('../addressesConfig');
+const { updateAddressesConfig } = require('../middlewares/updateAddressesConfig');
+const dotenv = require('dotenv');
+const Token = require('../models/token');
+const Transaction = require('../models/transact');
+const User = require('../models/user');
+const { balanceOf } = require('./ERC20Controller');
+const { priorityFeePerGas } = require('./gasEstimator');
+const { createEOA } = require('./createEoaWallet');
+
+dotenv.config();
+
+
+// Substitua com sua chave privada
+const privateKey = process.env.PRI_KEY
+
+// Carregar os ABIs dos contratos a partir dos arquivos JSON
+const entryPointABI = JSON.parse(fs.readFileSync(path.join(__dirname, '../abis', 'EntryPoint.json')));
+const accountFactoryABI = JSON.parse(fs.readFileSync(path.join(__dirname, '../abis', 'AccountFactory.json')));
+const simpleAccountABI = JSON.parse(fs.readFileSync(path.join(__dirname, '../abis', 'SimpleAccount.json')));
+const exampleContractABI = JSON.parse(fs.readFileSync(path.join(__dirname, '../abis', 'exampleContract.json')));
+const exampleContractABI2 = JSON.parse(fs.readFileSync(path.join(__dirname, '../abis', 'exampleContract2.json')));
+
+function createHash(data) {
+  //  return crypto.createHash('sha256').update(data).digest('hex');
+  const hash = crypto.createHash('sha256');
+  hash.update(data);
+  const hashData = "0x" + hash.digest('hex').slice(0, 40); // Retorna o hash como uma string hexadecimal
+  return hashData;
+}
 
 async function createTransaction(type, value, fromwallet, hash, towallet, tokenuri, tokenid) {
   const result = await Transaction.create({ type, value, fromwallet, hash, towallet, tokenuri, tokenid })
@@ -21,280 +48,155 @@ async function createTransaction(type, value, fromwallet, hash, towallet, tokenu
 
 module.exports = {
   async create(req, res) {
-    const { email, address} = req.body;
-    if (!email) {
-      return res.status(400).send('Email é obrigatório');
-    }
-
-    const exist = await User.findOne({ where: { email } })
-
-    if (!exist==0) {
-      return res.status(400).json({email: "ja existe"});
-    }
-
     try {
-      // Gera uma nova wallet e nova conta
+      const { email, cpf, address } = req.body;
 
-      const web3 = new Web3(
-        new Web3.providers.HttpProvider(
-          `${address}`
-        )
-      );
+      // Configure seu provider para o endereço do RPC
+      const provider = new JsonRpcProvider(address);
+      const signer = new Wallet(privateKey, provider);
+      const EOA = createEOA();
+      const hash =  createHash(email);
+      console.log("hash->", hash);
 
-      const account = web3.eth.accounts.create();
-      //const account = createAccount();
+      // console.log('Chave Privada:', wallet.privateKey);
+      // console.log('Chave Pública:', wallet.publicKey);
+      // console.log('Endereço Ethereum:', wallet.address);
 
-      const wallet = account.address;
-      const pk = account.privateKey;
+      // Criar instâncias dos contratos usando o provider
+      const entryPoint = new Contract(entryPointAddress, entryPointABI, signer);
+      const accountFactory = new Contract(accountFactoryAddress, accountFactoryABI, signer);
+      const initCode = accountFactoryAddress + accountFactory.interface.encodeFunctionData('createAccount', [EOA[0], 0]).slice(2);
+      
+      console.log("initCode->", initCode);
 
+      try {
+        const result = await entryPoint.getSenderAddress(initCode);
+
+      } catch (transaction) {
+        if (transaction.data && typeof transaction.data === 'string') {
+          var simpleAccountAddress = '0x' + transaction.data.slice(-40);
+        } else if (transaction.message && transaction.message.includes('return data:')) {
+          const returnData = transaction.message.split('return data: ')[1];
+          var simpleAccountAddress = '0x' + returnData.slice(-40);
+          simpleAccountAddress = simpleAccountAddress.replace(")", "");
+        } else {
+          console.error("O objeto transaction não contém um campo data ou uma mensagem reconhecível.");
+          return;
+        }
+      }
       // Armazena no banco de dados
-      const result = await User.create({ email, wallet, pk })
+      const result = await User.create({ email, cpf, simpleAccount: simpleAccountAddress, privateKey: EOA[1], publicKey: EOA[0] })
 
-      res.status(201).send({ email, wallet, pk });
+      res.status(200).json({
+        cpf: cpf,
+        email: email,
+        simpleAccountAddress: simpleAccountAddress
+      });
     } catch (error) {
-      res.status(400).json({ erro: "usuário já existe" })
+      console.error("Error:", error);
+      res.status(500).json({ error: "Usuário já existe" });
     }
   },
   async mintERC20(req, res) {
-    const { email, amount, contract } = req.body;
+    const { contract, simpleAccountAddress, amount, address } = req.body;
+    const provider = new JsonRpcProvider(address);
+    const user = await User.findOne({ where: { simpleAccount: simpleAccountAddress } })
 
-    //Busca informacoes usuario
-    const result = await User.findOne({ where: { email } });
+    // Configure seu provider para o endereço do RPC
+    const signer = new Wallet(user.privateKey, provider);
 
-    //Busca informações do contrato
-    const contracts = await Contract.findOne({ where: { contract } });
-    const from = contracts.wallet;
+    // Criar instâncias dos contratos usando o provider
+    const entryPoint = new Contract(entryPointAddress, entryPointABI, signer);
+    const accountFactory = new Contract(accountFactoryAddress, accountFactoryABI, signer);
+    const simpleAccount = new Contract(simpleAccountAddress, simpleAccountABI, signer);
+    const exampleContract = new Contract(exampleContractAddress2, exampleContractABI2, signer);
+    const amountInWei = Web3.utils.toWei(amount, 'ether');
+    const mintAmount = amountInWei;
 
-    const web3 = new Web3(
-      new Web3.providers.HttpProvider(
-        `${contracts.address}`
-      )
-    );
+    let balanceWei = await provider.getBalance(signer.address);
+    console.log(`The balance of the signer is:  ${signer.address} ${balanceWei} Wei`);
 
-    //Carrega abstracao
-    const templatePath = path.join(__dirname, '../artifacts/contracts', `${contracts.name}` + '.sol', `${contracts.name}` + '.json');
-    const erc20Abi = require(templatePath).abi;
-    const erc20Address = contract;
-    const erc20Contract = new web3.eth.Contract(erc20Abi, erc20Address);
+    balanceWei = await provider.getBalance(user.publicKey);
 
-    try {
-      const wallet = result.wallet;
-      const amountInWei = web3.utils.toWei(amount, 'ether');
-      const receipt = await erc20Contract.methods.mint(wallet, amountInWei).send({ from: from });
+    console.log(`The balance of the user is: ${user.publicKey} ${balanceWei} Wei`);
 
-      res.status(200).json({
-        hash: receipt.transactionHash,
-        block: receipt.blockNumber.toString()
-      });
-      createTransaction("Mint", amountInWei, wallet, receipt.transactionHash, from, "-", "-")
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
+    // Preparando dados para transação
+    const funcTargetData = exampleContract.interface.encodeFunctionData('mint', [simpleAccountAddress, mintAmount]);
+    const data = simpleAccount.interface.encodeFunctionData('execute', [exampleContractAddress2, 0, funcTargetData]);
+    let initCode = accountFactoryAddress + accountFactory.interface.encodeFunctionData('createAccount', [eoaPublicKey, 0]).slice(2);
+
+    const code = await provider.getCode(simpleAccountAddress);
+
+    if (code !== '0x') {
+      initCode = '0x';
     }
-  },
-  async burnERC20(req, res) {
-    const { email, amount, contract } = req.body;
-    const result = await User.findOne({ where: { email } })
 
-    //Busca informações do contrato
-    const contracts = await Contract.findOne({ where: { contract } });
+    //console.log('maxPriorityFeePerGas:', await priorityFeePerGas(address));
+    const nonce = await entryPoint.getNonce(simpleAccountAddress, 0);
 
+    // Criando objeto `userOp`
+    const userOp = {
+      sender: simpleAccountAddress,
+      nonce: await entryPoint.getNonce(simpleAccountAddress, 0),
+      initCode: initCode,
+      callData: data,
+      callGasLimit: '200000',
+      verificationGasLimit: '2000000',
+      preVerificationGas: '0x10edc8',
+      maxFeePerGas: '0x0973e0',
+      maxPriorityFeePerGas: await priorityFeePerGas(address),
+      paymasterAndData: paymasterAddress,
+      signature: '0x'
+    };
 
+    // Assinando o hash
+    const hash = await entryPoint.getUserOpHash(userOp);
+    userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
-    const web3 = new Web3(
-      new Web3.providers.HttpProvider(
-        `${contracts.address}`
-      )
-    );
-
-    //Configuração do acesso a contas abstratas
-    const entryPointAbi = require(process.env.ENTRYPOINTABI).abi;
-    const entryPointContract = new web3.eth.Contract(entryPointAbi, process.env.ENTRYPOINT_ADDRESS);
-    const erc20Address = contract;
-    const from = contracts.wallet;
-    const templatePath = path.join(__dirname, '../artifacts/contracts', `${contracts.name}` + '.sol', `${contracts.name}` + '.json');
-    const erc20Abi = require(templatePath).abi;
-    const erc20Contract = new web3.eth.Contract(erc20Abi, erc20Address);
-    const amountInWei = web3.utils.toWei(amount, 'ether');
-
+    
     try {
-      const wallet = result.wallet;
-      const receipt = await erc20Contract.methods.burnFrom(result.wallet, amountInWei).send({ from: from });
-
-      res.status(200).json({
-        hash: receipt.transactionHash,
-        block: receipt.blockNumber.toString()
+      // Enviando a transação
+      const tx = await entryPoint.handleOps([userOp], eoaPublicKey,
+      {
+        gasLimit: 3000000
       });
-      createTransaction("Burn", amountInWei, result.wallet, receipt.transactionHash, from, "-", "-")
+      const receipt = await tx.wait();
+      console.log('Transaction successful');
+      res.status(200).json({ transaction: "successful" });
+      //console.log("tx->", signer)
+      createTransaction("Mint", amountInWei, simpleAccountAddress, tx.hash, signer.address, "-", "-");
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
-  },
-  async transferERC20(req, res) {
-    const { fromEmail, toEmail, amount, contract } = req.body;
-
-    //Busca informações do usuario from
-    let email = fromEmail
-    let result = await User.findOne({ where: { email } })
-    const fromResult = result.wallet;
-
-    //Busca informações do usuario to
-    email = toEmail
-    result = await User.findOne({ where: { email } })
-    const toResult = result.wallet;
-
-    //Busca informações do contrato
-    const contracts = await Contract.findOne({ where: { contract } });
-
-    const web3 = new Web3(
-      new Web3.providers.HttpProvider(
-        `${contracts.address}`
-      )
-    );
-
-    //Convert valor moeda to Wei
-    const amountInWei = web3.utils.toWei(amount, 'ether');
-
-    //Carrega abstração
-    const entryPointAbi = require(process.env.ENTRYPOINTABI).abi;
-    const entryPointContract = new web3.eth.Contract(entryPointAbi, process.env.ENTRYPOINT_ADDRESS);
-    const from = contracts.wallet;
-    const templatePath = path.join(__dirname, '../artifacts/contracts', `${contracts.name}` + '.sol', `${contracts.name}` + '.json');
-    const erc20Abi = require(templatePath).abi;
-    const erc20Address = contract;
-    const erc20Contract = new web3.eth.Contract(erc20Abi, erc20Address);
-
-
-    try {
-      const wallet = result.wallet;
-      const burn = await erc20Contract.methods.burnFrom(fromResult, amountInWei).send({ from: from });
-      const mint = await erc20Contract.methods.mint(toResult, amountInWei).send({ from: from });
-
-      res.status(200).json({
-        "Burn hash": burn.transactionHash,
-        "Burn block": burn.blockNumber.toString(),
-        "Mint hash": mint.transactionHash,
-        "Mint block": mint.blockNumber.toString()
-      });
-
-      createTransaction("Transfer", amountInWei, fromResult, receipt.transactionHash, toResult, "-", "-")
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Error sending transaction:', error);
     }
   },
   async balanceERC20(req, res) {
-    const { email, contract } = req.body;
+    const { simpleAccountAddress, address } = req.body;
+    // Configure seu provider para o endereço do RPC
+    var web3 = new Web3(`${address}`);
 
-    //Busca informações do usuario
-    const result = await User.findOne({ where: { email } })
-
-    //Busca informações do contrato
-    const contracts = await Contract.findOne({ where: { contract } });
-
-    const web3 = new Web3(
-      new Web3.providers.HttpProvider(
-        `${contracts.address}`
-      )
-    );
-
-    //Carrega abastracao
-    const from = contracts.wallet;
-    const entryPointAbi = require(process.env.ENTRYPOINTABI).abi;
-    const entryPointContract = new web3.eth.Contract(entryPointAbi, process.env.ENTRYPOINT_ADDRESS);
-    const templatePath = path.join(__dirname, '../artifacts/contracts', `${contracts.name}` + '.sol', `${contracts.name}` + '.json');
-    const erc20Abi = require(templatePath).abi;
-    const erc20Address = contract;
-    const erc20Contract = new web3.eth.Contract(erc20Abi, erc20Address);
-
+    const provider = new JsonRpcProvider(address);
+    const signer = new Wallet(privateKey, provider);
 
     try {
-      const balance = await erc20Contract.methods.balanceOf(result.wallet).call();
-      const balanceInEther = web3.utils.fromWei(balance, 'ether');
-      res.json({ balance: balanceInEther });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
-  },
-  async mint721(req, res) {
-    const { recipient, contract, imageHash } = req.body;
-    try {
-      //const tokenURI = await uploadMetadata(metadata);
-      const address = await Contract.findOne({ where: { contract } })
+      const entryPoint = new Contract(entryPointAddress, entryPointABI, signer);
+      const accountFactory = new Contract(accountFactoryAddress, accountFactoryABI, signer);
+      const simpleAccount = new Contract(simpleAccountAddress, simpleAccountABI, signer);
+      const exampleContract2 = new Contract(exampleContractAddress2, exampleContractABI2, signer);
+      const accountAddress = address || defaultAddress;
 
-      const web3 = new Web3(new Web3.providers.HttpProvider(address.address));
-      const contractPath = path.resolve(__dirname, '../artifacts/contracts', `${address.name}` + '.sol', `${address.name}` + '.json');
-      const source = fs.readFileSync(contractPath, 'utf8');
-      const { abi, bytecode } = JSON.parse(source);
-
-      //Busca chave privada pelo endereço da Wallet
-      let result = await getPK(address.wallet);
-
-      const account = web3.eth.accounts.privateKeyToAccount(result.pk);
-      web3.eth.accounts.wallet.add(account);
-      web3.eth.defaultAccount = account.address;
-      const smartcontract = new web3.eth.Contract(abi, contract);
-
-      const metadata = {
-        "name": "NFT" + `${address.name}`,
-        "description": "NFT Gerado para " + `${address.name}`,
-        "image": "ipfs://" + `${imageHash}`,
-        "attributes":  req.body.attributes
-      }
-
-
-      const response = await axios.post(ipfsUrl + 'upload-metadata', JSON.stringify(metadata), {
-        headers: {
-          'Authorization': auth,
-          'Content-Type': 'application/json'
-        },
-      });
-
-      const tokenURI = response.data.tokenURI;
-      // const tx = await contract.methods.safeMint(recipient, tokenURI).send({ from: account.address });
-      const data = smartcontract.methods.safeMint(recipient, tokenURI).encodeABI();
-      const gasEstimate = await smartcontract.methods.safeMint(recipient, tokenURI).estimateGas({ from: account.address });
-
-      // Obtém o preço atual do gás
-      const gasPrice = await web3.eth.getGasPrice();
-
-      const tx = {
-        from: account.address,
-        to: contract,
-        gas: gasEstimate,
-        gasPrice: gasPrice,
-        data: data
-      };
-
-      // Assinar a transação
-      const signedTx = await web3.eth.accounts.signTransaction(tx, result.pk);
-
-      // Enviar a transação
-      const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
-      const transferEvents = await smartcontract.getPastEvents('Transfer', {
-        fromBlock: receipt.blockNumber,
-        toBlock: receipt.blockNumber
-      });
-
-      if (transferEvents.length > 0) {
-        let idtmp = String(transferEvents[0].returnValues.tokenId);
-        id = idtmp.replace('n', '');
-        res.status(200).json({
-          tokenId: id,
-          tokenURI: tokenURI,
-          txHash: receipt.transactionHash
-        });
-        createTransaction("Mint NFT", 0, recipient, receipt.transactionHash, account.address, tokenURI, id)
-        //        res.send({ tokenId });
+      if (simpleAccountAddress.length === 42) {
+        const checksumAddress = await accountFactory.getAddress(simpleAccountAddress);
+        const balance = await exampleContract2.balanceOf(simpleAccountAddress);
+        saldo = Web3.utils.fromWei(balance, 'ether');
+        console.log("balance:", saldo.toString());
+        res.json({ balance: saldo.toString() });
       } else {
-        console.error("NFT não gerado");
-        res.status(500).send('NFT nao foi gerado');
+        console.error('Invalid address:', simpleAccountAddress);
+        res.status(400).json({ error: 'Invalid address' });
       }
-
     } catch (error) {
-      res.status(400).json({ error })
+      console.error('Error:', error);
+      res.status(500).json({ error: error.message });
     }
-  },
-}  
+  }
+}

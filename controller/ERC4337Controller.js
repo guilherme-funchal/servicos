@@ -103,7 +103,7 @@ module.exports = {
     const user = await User.findOne({ where: { simpleAccount: simpleAccountAddress } })
 
     // Configure seu provider para o endereço do RPC
-    const signer = new Wallet(user.privateKey, provider);
+    const signer = new Wallet(eoaPrivateKey, provider);
 
     // Criar instâncias dos contratos usando o provider
     const entryPoint = new Contract(entryPointAddress, entryPointABI, signer);
@@ -116,9 +116,8 @@ module.exports = {
     let balanceWei = await provider.getBalance(signer.address);
     console.log(`The balance of the signer is:  ${signer.address} ${balanceWei} Wei`);
 
-    balanceWei = await provider.getBalance(user.publicKey);
-
-    console.log(`The balance of the user is: ${user.publicKey} ${balanceWei} Wei`);
+    // balanceWei = await provider.getBalance(user.publicKey);
+    // console.log(`The balance of the user is: ${user.publicKey} ${balanceWei} Wei`);
 
     // Preparando dados para transação
     const funcTargetData = exampleContract.interface.encodeFunctionData('mint', [simpleAccountAddress, mintAmount]);

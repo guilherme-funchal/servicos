@@ -139,8 +139,8 @@ module.exports = {
       nonce: await entryPoint.getNonce(simpleAccountAddress, 0),
       initCode: initCode,
       callData: data,
-      callGasLimit: '200000',
-      verificationGasLimit: '2000000',
+      callGasLimit: '100000',
+      verificationGasLimit: '1000000',
       preVerificationGas: '0x10edc8',
       maxFeePerGas: '0x0973e0',
       maxPriorityFeePerGas: await priorityFeePerGas(address),
@@ -157,7 +157,7 @@ module.exports = {
       // Enviando a transação
       const tx = await entryPoint.handleOps([userOp], eoaPublicKey,
       {
-        gasLimit: 3000000
+        gasLimit: 2000000
       });
       const receipt = await tx.wait();
       console.log('Transaction successful');

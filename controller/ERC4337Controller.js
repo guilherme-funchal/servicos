@@ -67,7 +67,7 @@ module.exports = {
       const accountFactory = new Contract(accountFactoryAddress, accountFactoryABI, signer);
       const initCode = accountFactoryAddress + accountFactory.interface.encodeFunctionData('createAccount', [EOA[0], 0]).slice(2);
       
-      console.log("initCode->", initCode);
+      console.log("initCode cria usuario ->", initCode);
 
       try {
         const result = await entryPoint.getSenderAddress(initCode);
@@ -104,6 +104,7 @@ module.exports = {
 
     // Configure seu provider para o endereço do RPC
     const signer = new Wallet(eoaPrivateKey, provider);
+    const signer2 = new Wallet(user.privateKey, provider);
 
     // Criar instâncias dos contratos usando o provider
     const entryPoint = new Contract(entryPointAddress, entryPointABI, signer);
@@ -113,17 +114,25 @@ module.exports = {
     const amountInWei = Web3.utils.toWei(amount, 'ether');
     const mintAmount = amountInWei;
 
-    let balanceWei = await provider.getBalance(signer.address);
+    let balanceWei = await provider.getBalance(eoaPublicKey);
+    console.log(`The balance of the eoaPublic is:  ${eoaPublicKey} ${balanceWei} Wei`);
+
+    balanceWei = await provider.getBalance(signer.address);
     console.log(`The balance of the signer is:  ${signer.address} ${balanceWei} Wei`);
 
-    // balanceWei = await provider.getBalance(user.publicKey);
-    // console.log(`The balance of the user is: ${user.publicKey} ${balanceWei} Wei`);
+    balanceWei = await provider.getBalance(signer2.address);
+    console.log(`The balance of the signer2 is:  ${signer2.address} ${balanceWei} Wei`);
+
+    balanceWei = await provider.getBalance(paymasterAddress);
+    console.log(`The balance of the signer2 is:  ${paymasterAddress} ${balanceWei} Wei`);
 
     // Preparando dados para transação
     const funcTargetData = exampleContract.interface.encodeFunctionData('mint', [simpleAccountAddress, mintAmount]);
     const data = simpleAccount.interface.encodeFunctionData('execute', [exampleContractAddress2, 0, funcTargetData]);
-    let initCode = accountFactoryAddress + accountFactory.interface.encodeFunctionData('createAccount', [eoaPublicKey, 0]).slice(2);
 
+    let initCode = accountFactoryAddress + accountFactory.interface.encodeFunctionData('createAccount', [user.publicKey, 0]).slice(2);
+    console.log("initCode mint->", initCode);
+    
     const code = await provider.getCode(simpleAccountAddress);
 
     if (code !== '0x') {
@@ -150,8 +159,7 @@ module.exports = {
 
     // Assinando o hash
     const hash = await entryPoint.getUserOpHash(userOp);
-    userOp.signature = await signer.signMessage(ethers.getBytes(hash));
-
+    userOp.signature = await signer2.signMessage(ethers.getBytes(hash));
     
     try {
       // Enviando a transação
@@ -162,7 +170,6 @@ module.exports = {
       const receipt = await tx.wait();
       console.log('Transaction successful');
       res.status(200).json({ transaction: "successful" });
-      //console.log("tx->", signer)
       createTransaction("Mint", amountInWei, simpleAccountAddress, tx.hash, signer.address, "-", "-");
     } catch (error) {
       console.error('Error sending transaction:', error);

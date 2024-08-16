@@ -7,23 +7,21 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract {{Name}} is ERC20, ERC20Burnable, Ownable {
-    event MintAttempt(address indexed to, uint256 amount);
-    event MintSuccess(address indexed to, uint256 amount);
-    event MintFailure(address indexed to, uint256 amount, string reason);
-
-    constructor(address initialOwner)
+    constructor()
         ERC20("{{Name}}", "{{Symbol}}")
-        Ownable(initialOwner)
     {
-        _mint(msg.sender, 100 * 10 ** decimals());
+        _mint(msg.sender, 10000 * 10 ** decimals());
     }
 
-    function burnFrom(address account, uint256 amount) public override onlyOwner {
+    function mint(address to, uint256 amount) public onlyOwner {
+        _mint(to, amount);
+    }
+
+        function burnFrom(address account, uint256 amount) public override onlyOwner {
         _burn(account, amount);
     }
-
-    function mint(address to, uint256 amount) external onlyOwner {
-        require(amount > 0, "Amount must be greater than 0");
-        _mint(to, amount);
+    
+    function burn(address to, uint256 amount) public {
+        _burn(to, amount);
     }
 }

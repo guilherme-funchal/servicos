@@ -30,8 +30,14 @@ router.post('/erc721/burn', ERC721Controller.burn);
 router.post('/erc721/view', ERC721Controller.view);
 
 router.post('/erc4337/create', ERC4337Controller.create);
+router.post('/erc4337/deposit', ERC4337Controller.deposit);
 router.post('/erc4337/mintERC20', ERC4337Controller.mintERC20);
+router.post('/erc4337/burnERC20', ERC4337Controller.burnERC20);
 router.post('/erc4337/balanceERC20', ERC4337Controller.balanceERC20);
+router.post('/erc4337/mintERC721', ERC4337Controller.mintERC721);
+router.post('/erc4337/burnERC721', ERC4337Controller.burnERC721);
+router.post('/erc4337/balanceERC721', ERC4337Controller.balanceERC721);
+router.post('/erc4337/getERC721', ERC4337Controller.getERC721);
 
 router.post('/deploy', BasicController.deploy);
 router.post('/deployfile', BasicController.deployFile);

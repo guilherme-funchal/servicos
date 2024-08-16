@@ -12,7 +12,7 @@ async function main() {
   console.log("Deploying contracts with the account:", wallet.address);
   const MyToken = await ethers.getContractFactory(name, wallet);
   const myToken = await MyToken.deploy(wallet);
-  
+
   console.log("Contract nunber:", myToken.target);
 }
 
@@ -22,3 +22,6 @@ main()
     console.error(error);
     process.exit(1);
   });
+  
+
+ 

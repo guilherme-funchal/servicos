@@ -10,18 +10,9 @@ const { exec } = require('child_process');
 const crypto = require('crypto');
 const { Web3 } = require('web3');
 const dotenv = require('dotenv');
-//const { Pool } = require('pg');
 const moment = require('moment');
-// Configure a conexão com o banco de dados PostgreSQL
-dotenv.config();
 
-// const pool = new Pool({
-//   user: process.env.DB_USER,
-//   host: process.env.DB_HOST,
-//   database: process.env.DB_DATABASE,
-//   password: process.env.DB_PASSWORD,
-//   port: process.env.DB_PORT,
-// });
+dotenv.config();
 
 async function getPK(token) {
   const result = await Token.findOne({ where: { token } })

@@ -44,6 +44,7 @@ module.exports = {
     try {
       const newFilePath = path.join(__dirname, '../contracts', name + '.sol');
       const deployScript = path.join(__dirname, '../scripts', 'deploy.js');
+      
       const command = `PRIVATE_KEY=${privateKey} NAME=${name} npx hardhat run ${deployScript} --network ${host}`;
 
       exec(command, (error, stdout, stderr) => {
